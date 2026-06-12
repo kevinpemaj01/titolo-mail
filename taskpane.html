@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Titolo Mail — Studio Pemaj</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+  :root{
+    --bordeaux:#7B1F42;
+    --bordeaux-scuro:#5C1731;
+    --carta:#FBF9F7;
+    --inchiostro:#26211F;
+    --grigio:#6E6661;
+    --linea:#E4DDD8;
+    --ok:#2E6B45;
+    --errore:#A33B2E;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",system-ui,sans-serif;
+    background:var(--carta);
+    color:var(--inchiostro);
+    font-size:13px;
+    line-height:1.45;
+  }
+  header{background:var(--bordeaux);color:#fff;padding:12px 16px}
+  header h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+  header p{font-size:11px;opacity:.85;margin-top:2px}
+  main{padding:14px 16px 20px}
+  .campo{margin-bottom:12px}
+  label{display:block;font-size:11px;font-weight:600;color:var(--grigio);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+  textarea, input[type=password], input[type=text]{
+    width:100%;
+    border:1px solid var(--linea);
+    border-radius:6px;
+    background:#fff;
+    padding:8px 10px;
+    font-size:13px;
+    color:var(--inchiostro);
+    font-family:inherit;
+  }
+  textarea{font-family:Consolas,"Cascadia Mono",monospace;font-size:12.5px;resize:vertical;min-height:74px}
+  textarea:focus, input:focus{outline:2px solid var(--bordeaux);outline-offset:1px;border-color:var(--bordeaux)}
+  .bottoni{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+  button{border:none;border-radius:6px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  button:focus-visible{outline:2px solid var(--bordeaux-scuro);outline-offset:2px}
+  .primario{background:var(--bordeaux);color:#fff;width:100%}
+  .primario:hover{background:var(--bordeaux-scuro)}
+  .secondario{background:#fff;color:var(--bordeaux);border:1px solid var(--bordeaux);flex:1}
+  .secondario:hover{background:#F6ECF0}
+  button:disabled{opacity:.5;cursor:default}
+  #stato{margin-top:10px;font-size:12px;min-height:18px}
+  #stato.ok{color:var(--ok)}
+  #stato.errore{color:var(--errore)}
+  details{margin-top:18px;border-top:1px solid var(--linea);padding-top:10px}
+  summary{font-size:12px;color:var(--grigio);cursor:pointer}
+  details .campo{margin-top:10px}
+  .nota{font-size:11px;color:var(--grigio);margin-top:6px}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:g .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes g{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion: reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Titolo Mail</h1>
+  <p>AAAA_MM_GG — Risposta a / Richiesta da … per …</p>
+</header>
+<main>
+  <button id="btnGenera" class="primario">Genera titolo</button>
+
+  <div class="campo" style="margin-top:14px">
+    <label for="titolo">Titolo proposto (modificabile)</label>
+    <textarea id="titolo" placeholder="Il titolo apparirà qui…"></textarea>
+  </div>
+
+  <div class="bottoni">
+    <button id="btnCopia" class="secondario" disabled>Copia titolo</button>
+    <button id="btnScarica" class="secondario" disabled>Salva .eml…</button>
+  </div>
+
+  <div id="stato" role="status"></div>
+
+  <details>
+    <summary>Impostazioni</summary>
+    <div class="campo">
+      <label for="interni">Nomi/domini interni (separati da virgola)</label>
+      <input type="text" id="interni" placeholder="pemaj, studio gallo, tecnomisure">
+      <p class="nota">Mittenti e destinatari che contengono queste parole non vengono nominati nel titolo: conta solo la controparte esterna ("Risposta a Enzo…", "Richiesta da Enzo…").</p>
+    </div>
+    <div class="campo">
+      <label for="apikey">Chiave API Anthropic (opzionale)</label>
+      <input type="password" id="apikey" placeholder="sk-ant-…">
+      <p class="nota">Con la chiave, l'AI legge solo l'ultimo messaggio del thread e produce tipo (Richiesta, Invio, Sollecito…) e motivo. Senza, viene usato l'oggetto ripulito. La chiave resta salvata solo in questo browser.</p>
+    </div>
+    <div class="bottoni">
+      <button id="btnSalvaImp" class="secondario">Salva impostazioni</button>
+    </div>
+    <p class="nota">Suggerimento: se la finestra "dove salvare" non compare, attiva in Edge/Chrome → Impostazioni → Download → "Chiedi dove salvare ogni file prima di scaricarlo".</p>
+  </details>
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  var INTERNI_DEFAULT = "pemaj, studio gallo, studiogallo, tecnomisure";
+
+  var $ = function(id){ return document.getElementById(id); };
+  var stato = function(msg, tipo){
+    var el = $("stato");
+    el.textContent = msg || "";
+    el.className = tipo || "";
+  };
+  var ls = {
+    get: function(k, dft){ try { var v = localStorage.getItem(k); return v === null ? dft : v; } catch(e){ return dft; } },
+    set: function(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+  };
+
+  Office.onReady(function(){
+    $("apikey").value = ls.get("titoloMail.apiKey", "");
+    $("interni").value = ls.get("titoloMail.interni", INTERNI_DEFAULT);
+    $("btnGenera").addEventListener("click", genera);
+    $("btnCopia").addEventListener("click", copia);
+    $("btnScarica").addEventListener("click", scarica);
+    $("btnSalvaImp").addEventListener("click", function(){
+      ls.set("titoloMail.apiKey", $("apikey").value.trim());
+      ls.set("titoloMail.interni", $("interni").value.trim() || INTERNI_DEFAULT);
+      stato("Impostazioni salvate su questo dispositivo.", "ok");
+    });
+    $("titolo").addEventListener("input", function(){
+      var ha = $("titolo").value.trim().length > 0;
+      $("btnCopia").disabled = !ha;
+      $("btnScarica").disabled = !ha;
+    });
+  });
+
+  /* ---------- interni / controparte ---------- */
+
+  function listaInterni(){
+    return ls.get("titoloMail.interni", INTERNI_DEFAULT)
+      .split(",")
+      .map(function(s){ return s.trim().toLowerCase(); })
+      .filter(function(s){ return s.length > 1; });
+  }
+
+  function eInterno(persona, interni){
+    if(!persona) return false;
+    var s = ((persona.displayName || "") + " " + (persona.emailAddress || "")).toLowerCase();
+    for(var i = 0; i < interni.length; i++){
+      if(s.indexOf(interni[i]) > -1) return true;
+    }
+    return false;
+  }
+
+  function nomeBreve(persona){
+    if(!persona) return "controparte";
+    var n = (persona.displayName || persona.emailAddress || "").trim();
+    if(n.indexOf("@") > -1) n = n.split("@")[0].replace(/[._]/g, " ");
+    if(n.indexOf(",") > -1){ // "Cognome, Nome" -> "Nome Cognome"
+      var p = n.split(",");
+      n = (p[1] || "").trim() + " " + p[0].trim();
+    }
+    return n.replace(/["<>]/g, "").trim() || "controparte";
+  }
+
+  /* ---------- generazione titolo ---------- */
+
+  function genera(){
+    var item = Office.context.mailbox.item;
+    if(!item){ stato("Apri una mail e riprova.", "errore"); return; }
+
+    $("btnGenera").innerHTML = '<span class="spin"></span>Analisi in corso…';
+    $("btnGenera").disabled = true;
+    stato("");
+
+    var interni = listaInterni();
+    var dataStr = formatoData(item.dateTimeCreated || new Date());
+    var oggettoRaw = item.subject || "";
+    var oggetto = pulisciOggetto(oggettoRaw);
+
+    // direzione: chi è la controparte esterna?
+    var inviataDaNoi = eInterno(item.from, interni);
+    var prep, controparte;
+    if(inviataDaNoi){
+      prep = "a";
+      var dest = item.to || [];
+      var esterni = dest.filter(function(p){ return !eInterno(p, interni); });
+      var scelto = esterni[0] || dest[0];
+      controparte = nomeBreve(scelto);
+      if(esterni.length > 1) controparte += " +" + (esterni.length - 1);
+    } else {
+      prep = "da";
+      controparte = nomeBreve(item.from);
+    }
+
+    // tipo dal prefisso oggetto: R:/RE: risposta, I:/FW:/FWD:/TR: inoltro
+    var tipoFisso = null;
+    if(/^\s*(r|re)\s*:/i.test(oggettoRaw)) tipoFisso = "Risposta";
+    else if(/^\s*(i|fw|fwd|tr)\s*:/i.test(oggettoRaw)) tipoFisso = "Inoltro";
+
+    item.body.getAsync(Office.CoercionType.Text, function(res){
+      var corpo = (res.status === Office.AsyncResultStatus.Succeeded) ? (res.value || "") : "";
+      var ultimo = ultimoMessaggio(corpo);
+
+      generaTipoEMotivo(ultimo, oggetto, tipoFisso, prep, controparte, function(tipo, motivo){
+        var testa;
+        if(tipo){
+          testa = tipo + " " + prep + " " + controparte;
+        } else {
+          testa = (prep === "da" ? "Da " : "A ") + controparte;
+        }
+        var titolo = dataStr + " - " + testa + " per " + motivo;
+        $("titolo").value = sanificaNomeFile(titolo);
+        $("btnCopia").disabled = false;
+        $("btnScarica").disabled = false;
+        $("btnGenera").textContent = "Genera titolo";
+        $("btnGenera").disabled = false;
+        stato("Titolo generato. Puoi modificarlo prima di copiare o salvare.", "ok");
+      });
+    });
+  }
+
+  function formatoData(d){
+    var p = function(n){ return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "_" + p(d.getMonth() + 1) + "_" + p(d.getDate());
+  }
+
+  function pulisciOggetto(s){
+    var prima;
+    do { prima = s; s = s.replace(/^\s*(re|r|fw|fwd|i|tr|rif)\s*:\s*/i, ""); } while(s !== prima);
+    return s.trim() || "comunicazione";
+  }
+
+  /* Nei thread di risposta conta solo l'ultimo messaggio:
+     tagliamo il corpo al primo separatore di messaggio citato. */
+  function ultimoMessaggio(testo){
+    var separatori = [
+      /^\s*-{3,}\s*Messaggio originale\s*-{3,}/im,
+      /^\s*-{3,}\s*Original Message\s*-{3,}/im,
+      /^_{10,}\s*$/m,
+      /^\s*Da:\s.+$/m,
+      /^\s*From:\s.+$/m,
+      /^\s*Il giorno .{3,80} ha scritto:/m,
+      /^\s*On .{3,80} wrote:/m,
+      /^\s*Le .{3,80} a écrit\s?:/m
+    ];
+    var taglio = testo.length;
+    for(var i = 0; i < separatori.length; i++){
+      var m = testo.match(separatori[i]);
+      if(m && m.index > 40 && m.index < taglio) taglio = m.index;
+    }
+    return testo.substring(0, taglio).trim();
+  }
+
+  /* ---------- tipo + motivo: AI se c'è la chiave, altrimenti oggetto ---------- */
+
+  function generaTipoEMotivo(testoUltimo, oggetto, tipoFisso, prep, controparte, cb){
+    var key = ls.get("titoloMail.apiKey", "").trim();
+    if(!key || !testoUltimo){ cb(tipoFisso, oggetto); return; }
+
+    var istruzTipo = tipoFisso
+      ? "Il TIPO è già stabilito: " + tipoFisso + ". Restituisci comunque TIPO|MOTIVO usando quel tipo."
+      : "Scegli TIPO tra: Richiesta, Invio, Risposta, Comunicazione, Convocazione, Sollecito, Conferma, Trasmissione.";
+
+    var prompt = "Leggi questo messaggio email (solo l'ultimo del thread). Rispondi SOLO nel formato TIPO|MOTIVO, senza altro testo. "
+      + istruzTipo
+      + " MOTIVO: in italiano, massimo 7 parole, descrive lo scopo concreto della mail (es. 'preventivo cabina MT Quattordio'), senza punteggiatura finale né virgolette, deve completare la frase '" + (tipoFisso || "Richiesta") + " " + prep + " " + controparte + " per …'.\n\n"
+      + "Oggetto: " + oggetto + "\n\nMessaggio:\n" + testoUltimo.substring(0, 4000);
+
+    fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 60,
+        messages: [{ role: "user", content: prompt }]
+      })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var txt = "";
+      if(data && data.content){
+        for(var i = 0; i < data.content.length; i++){
+          if(data.content[i].type === "text") txt += data.content[i].text;
+        }
+      }
+      txt = txt.replace(/["\n\r]+/g, " ").trim();
+      var parti = txt.split("|");
+      if(parti.length >= 2){
+        var tipo = tipoFisso || parti[0].trim();
+        var motivo = parti.slice(1).join("|").replace(/\.+$/, "").trim();
+        cb(tipo || null, motivo || oggetto);
+      } else {
+        cb(tipoFisso, txt.replace(/\.+$/, "").trim() || oggetto);
+      }
+    })
+    .catch(function(){
+      stato("AI non raggiungibile: uso l'oggetto della mail.", "errore");
+      cb(tipoFisso, oggetto);
+    });
+  }
+
+  /* ---------- azioni ---------- */
+
+  function sanificaNomeFile(s){
+    return s.replace(/[\\/:*?"<>|]/g, "-").replace(/\s{2,}/g, " ").trim().substring(0, 180);
+  }
+
+  function copia(){
+    var t = $("titolo").value.trim();
+    if(!t) return;
+    var fine = function(ok){
+      stato(ok ? "Titolo copiato negli appunti." : "Copia non riuscita: seleziona il testo e copia manualmente.", ok ? "ok" : "errore");
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){ fine(true); }, function(){ fine(false); });
+    } else {
+      $("titolo").select();
+      try { fine(document.execCommand("copy")); } catch(e){ fine(false); }
+    }
+  }
+
+  function scarica(){
+    var titolo = sanificaNomeFile($("titolo").value.trim());
+    if(!titolo) return;
+    stato("Recupero della mail in corso…");
+
+    Office.context.mailbox.getCallbackTokenAsync({ isRest: true }, function(res){
+      if(res.status !== Office.AsyncResultStatus.Succeeded){
+        stato("Impossibile ottenere l'autorizzazione. Usa 'Copia titolo' e salva la mail manualmente.", "errore");
+        return;
+      }
+      var token = res.value;
+      var restId = Office.context.mailbox.convertToRestId(
+        Office.context.mailbox.item.itemId,
+        Office.MailboxEnums.RestVersion.v2_0
+      );
+      var url = Office.context.mailbox.restUrl + "/v2.0/me/messages/" + restId + "/$value";
+
+      fetch(url, { headers: { Authorization: "Bearer " + token } })
+        .then(function(r){
+          if(!r.ok) throw new Error(r.status);
+          return r.blob();
+        })
+        .then(function(blob){ salvaFile(blob, titolo + ".eml"); })
+        .catch(function(){
+          stato("Download non riuscito su questo client. Usa 'Copia titolo' e poi Salva con nome in Outlook.", "errore");
+        });
+    });
+  }
+
+  /* Prima scelta: finestra nativa "Salva con nome" (showSaveFilePicker).
+     Ripiego: download classico (con l'impostazione Edge "Chiedi dove salvare"
+     anche questo apre la finestra di scelta cartella). */
+  function salvaFile(blob, nome){
+    if(window.showSaveFilePicker){
+      window.showSaveFilePicker({
+        suggestedName: nome,
+        types: [{ description: "Email", accept: { "message/rfc822": [".eml"] } }]
+      })
+      .then(function(handle){ return handle.createWritable(); })
+      .then(function(writable){
+        return writable.write(blob).then(function(){ return writable.close(); });
+      })
+      .then(function(){ stato("Mail salvata nella cartella scelta.", "ok"); })
+      .catch(function(err){
+        if(err && err.name === "AbortError"){ stato("Salvataggio annullato.", ""); return; }
+        scaricaClassico(blob, nome);
+      });
+    } else {
+      scaricaClassico(blob, nome);
+    }
+  }
+
+  function scaricaClassico(blob, nome){
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
+    stato("File scaricato. Per scegliere subito la cartella, attiva in Edge: Impostazioni → Download → 'Chiedi dove salvare ogni file'.", "ok");
+  }
+})();
+</script>
+</body>
+</html>
